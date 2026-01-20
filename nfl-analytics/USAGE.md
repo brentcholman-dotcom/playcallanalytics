@@ -200,10 +200,226 @@ df = load_and_process_fourth_downs()
 - **Memory usage**: ~100-200 MB for full dataset
 - **Load time**: 30-60 seconds for full dataset (first download is cached)
 
+## Game Context & Rolling Statistics
+
+### Overview
+
+The `game_context` module adds rolling context to each play, tracking recent performance, drive status, scoring momentum, and turnovers. This provides dynamic context that evolves throughout the game.
+
+### Quick Start
+
+```python
+from models.game_context import process_all_games_with_context
+
+# Process all games and add rolling context
+plays_with_context = process_all_games_with_context(seasons=[2023])
+
+# Data saved to: data/processed/plays_with_context.parquet
+```
+
+### Context Features Added
+
+#### 1. Recent Offensive History (Last 5 Plays)
+
+Tracks the offense's recent performance:
+
+- **off_success_rate**: % of plays gaining 40%+ of needed yards
+- **off_yards_per_play**: Average yards gained
+- **off_explosive_plays**: Count of 15+ yard plays
+
+```python
+# Example: Find hot offenses
+hot_offenses = plays[plays['off_success_rate'] >= 0.8]
+```
+
+#### 2. Recent Defensive History (Last 5 Plays)
+
+Tracks the defense's recent performance:
+
+- **def_success_rate**: % of plays allowed gaining 40%+ of needed yards
+- **def_yards_per_play**: Average yards allowed
+
+```python
+# Example: Find struggling defenses
+struggling_defenses = plays[plays['def_yards_per_play'] > 7.0]
+```
+
+#### 3. Drive Context
+
+Tracks current drive statistics:
+
+- **plays_this_drive**: Number of plays in current drive
+- **yards_this_drive**: Total yards gained this drive
+- **drive_efficiency**: Yards per play this drive
+
+```python
+# Example: Find long, efficient drives
+long_drives = plays[
+    (plays['plays_this_drive'] >= 8) &
+    (plays['drive_efficiency'] >= 6.0)
+]
+```
+
+#### 4. Scoring & Momentum Context
+
+Tracks scoring trends and momentum:
+
+- **time_since_last_score**: Seconds since last score (either team)
+- **last_score_team**: Team that scored last
+- **momentum_shift**: Did lead change in last 5 minutes?
+
+```python
+# Example: Find plays with recent momentum shifts
+momentum_plays = plays[plays['momentum_shift'] == True]
+
+# Example: Long scoring droughts
+droughts = plays[plays['time_since_last_score'] > 600]  # 10+ minutes
+```
+
+#### 5. Turnover Context
+
+Tracks recent turnovers:
+
+- **turnovers_last_10_plays_offense**: Turnovers by current offense
+- **turnovers_last_10_plays_defense**: Turnovers forced by current defense
+- **time_since_turnover**: Seconds since last turnover (either team)
+
+```python
+# Example: Post-turnover situations
+recent_turnovers = plays[plays['time_since_turnover'] < 120]  # Last 2 minutes
+```
+
+### Advanced Usage
+
+#### Process Single Game
+
+```python
+from ingestion.play_by_play import load_pbp_data
+from models.game_context import add_game_context
+
+# Load data
+pbp = load_pbp_data(seasons=[2023])
+
+# Get specific game
+game = pbp[pbp['game_id'] == '2023_01_BUF_NYJ']
+
+# Add context
+game_with_context = add_game_context(game)
+```
+
+#### Individual Context Functions
+
+```python
+from models.game_context import (
+    calculate_recent_offensive_history,
+    calculate_recent_defensive_history,
+    calculate_drive_context,
+    calculate_scoring_context,
+    calculate_turnover_context
+)
+
+# Calculate specific contexts
+game = calculate_recent_offensive_history(game, window=5)
+game = calculate_drive_context(game)
+game = calculate_scoring_context(game)
+```
+
+#### Get Summary Statistics
+
+```python
+from models.game_context import get_context_summary
+
+# Load processed data
+plays = pd.read_parquet('data/processed/plays_with_context.parquet')
+
+# Get summary
+summary = get_context_summary(plays)
+print(summary)
+```
+
+### Example Analysis
+
+#### 4th Down Decisions by Context
+
+```python
+import pandas as pd
+
+# Load 4th down data with context
+fourth_downs = pd.read_parquet('data/processed/fourth_downs_2023.parquet')
+plays_context = pd.read_parquet('data/processed/plays_with_context.parquet')
+
+# Merge context into 4th downs
+fourth_downs_with_context = fourth_downs.merge(
+    plays_context[['game_id', 'play_id', 'off_success_rate', 'momentum_shift']],
+    on=['game_id', 'play_id'],
+    how='left'
+)
+
+# Analyze decisions by offensive success rate
+print(fourth_downs_with_context.groupby('decision')['off_success_rate'].mean())
+
+# Went for it rate when offense is hot
+hot_offense = fourth_downs_with_context[
+    fourth_downs_with_context['off_success_rate'] >= 0.8
+]
+print(f"Go for it rate when hot: {(hot_offense['decision'] == 'went_for_it').mean():.2%}")
+```
+
+#### Conversion Success by Context
+
+```python
+# Filter to "went for it" decisions
+went_for_it = fourth_downs_with_context[
+    fourth_downs_with_context['decision'] == 'went_for_it'
+]
+
+# Conversion rate by offensive success
+bins = [0, 0.4, 0.6, 0.8, 1.0]
+labels = ['cold', 'lukewarm', 'warm', 'hot']
+went_for_it['offense_temp'] = pd.cut(
+    went_for_it['off_success_rate'],
+    bins=bins,
+    labels=labels
+)
+
+conversion_by_temp = went_for_it.groupby('offense_temp')['converted'].agg([
+    ('attempts', 'count'),
+    ('success_rate', 'mean')
+])
+print(conversion_by_temp)
+```
+
+### Running Tests
+
+```bash
+cd nfl-analytics
+python test_game_context.py
+```
+
+This will:
+- Test each context calculation function
+- Process a full season
+- Generate summary statistics
+- Validate data quality
+
+### Performance Notes
+
+- **Processing time**: ~2-3 minutes per season (single-threaded)
+- **Memory usage**: ~500 MB for full dataset
+- **Output size**: ~150 MB parquet file for single season
+
+### Context Calculation Notes
+
+1. **Rolling windows**: Use last N plays for each team separately
+2. **Edge cases**: First few plays of game may have NaN values for context
+3. **Drive tracking**: Uses existing drive identifiers when available
+4. **Chronological order**: Critical that plays are processed in game order
+
 ## Next Steps
 
-After loading the data, you can:
+After loading the data and adding context, you can:
 1. Merge with weather data (see `ingestion/weather_api.py`)
 2. Add injury information (see `ingestion/injury_feed.py`)
-3. Calculate momentum scores (see `models/momentum.py`)
-4. Build conversion probability models (see `models/conversion.py`)
+3. Use context features in momentum models (see `models/momentum.py`)
+4. Build context-aware conversion probability models (see `models/conversion.py`)
+5. Backtest predictions with contextual features (see `backtesting/validator.py`)
