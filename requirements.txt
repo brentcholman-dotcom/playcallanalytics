@@ -1,0 +1,8 @@
+pandas
+numpy
+nfl_data_py
+requests
+python-dotenv
+rich
+pyarrow
+fastparquet
