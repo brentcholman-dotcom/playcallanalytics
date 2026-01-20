@@ -415,11 +415,255 @@ This will:
 3. **Drive tracking**: Uses existing drive identifiers when available
 4. **Chronological order**: Critical that plays are processed in game order
 
+## Momentum Scoring
+
+### Overview
+
+The momentum module quantifies offensive momentum on a 0-100 scale using four weighted components:
+
+- **Recent Play Success** (40%): Success rate of last 5 plays
+- **Drive Efficiency** (25%): Current drive vs season average
+- **Scoring Recency** (20%): How recently team scored
+- **Turnover Impact** (15%): Recent turnover effects
+
+### Momentum Scale
+
+- **0-25**: Cold/struggling offense
+- **26-50**: Average momentum
+- **51-75**: Good momentum
+- **76-100**: Hot/dominant offense
+
+### Quick Start
+
+```python
+from ingestion.play_by_play import load_pbp_data
+from models.game_context import add_game_context
+from models.momentum import add_momentum_scores
+
+# Load data
+pbp = load_pbp_data(seasons=[2023])
+
+# Get a game
+game = pbp[pbp['game_id'] == '2023_01_BUF_NYJ']
+
+# Add context
+game_with_context = add_game_context(game)
+
+# Add momentum scores
+game_with_momentum = add_momentum_scores(game_with_context)
+
+# View momentum scores
+print(game_with_momentum[['posteam', 'momentum_score']].head())
+```
+
+### Momentum Components
+
+#### 1. Recent Play Success (0-40 points)
+
+Based on success rate of last 5 plays (gaining 40%+ of needed yards):
+
+```python
+# 100% success = 40 points
+# 50% success = 20 points
+# 0% success = 0 points
+```
+
+#### 2. Drive Efficiency (0-25 points)
+
+Compares current drive efficiency to team's season average:
+
+```python
+# 50% better than average (1.5x) = 25 points
+# At average (1.0x) = 12.5 points
+# 50% worse than average (0.5x) = 0 points
+```
+
+#### 3. Scoring Recency (0-20 points)
+
+Rewards teams that scored recently:
+
+```python
+# Scored in last 2 minutes = 20 points
+# Scored in last 5 minutes = 15 points
+# Scored in last 10 minutes = 10 points
+# No recent score or opponent scored = 5 points
+```
+
+#### 4. Turnover Impact (0-15 points)
+
+Accounts for recent turnovers:
+
+```python
+# Opponent turnover in last 10 plays = 15 points (momentum boost)
+# Own turnover in last 10 plays = 0 points (momentum killer)
+# No recent turnovers = 7.5 points (neutral)
+```
+
+### Usage Examples
+
+#### Calculate Momentum for Single Play
+
+```python
+from models.momentum import calculate_momentum, calculate_season_averages
+
+# Calculate season averages
+season_avg_ypp = calculate_season_averages(pbp_data)
+
+# Calculate momentum for a specific row
+row = plays_with_context.iloc[100]
+momentum_score = calculate_momentum(row, season_avg_ypp)
+print(f"Momentum: {momentum_score:.1f}/100")
+```
+
+#### Add Momentum to Entire Dataset
+
+```python
+from models.momentum import add_momentum_scores
+
+# Add momentum scores (calculates season averages automatically)
+plays_with_momentum = add_momentum_scores(plays_with_context)
+
+# View statistics
+print(plays_with_momentum['momentum_score'].describe())
+```
+
+#### Categorize Momentum
+
+```python
+from models.momentum import get_momentum_category
+
+# Add categories
+plays_with_momentum['momentum_category'] = plays_with_momentum['momentum_score'].apply(
+    get_momentum_category
+)
+
+# View distribution
+print(plays_with_momentum['momentum_category'].value_counts())
+```
+
+#### Analyze Momentum Distribution
+
+```python
+from models.momentum import analyze_momentum_distribution
+
+# Get summary by momentum category
+summary = analyze_momentum_distribution(plays_with_momentum)
+print(summary)
+```
+
+### Example Analysis
+
+#### 4th Down Decisions by Momentum
+
+```python
+import pandas as pd
+
+# Load 4th downs and add momentum
+fourth_downs = pd.read_parquet('data/processed/fourth_downs_2023.parquet')
+plays_momentum = pd.read_parquet('data/processed/plays_with_momentum.parquet')
+
+# Merge
+fourth_downs_momentum = fourth_downs.merge(
+    plays_momentum[['game_id', 'play_id', 'momentum_score']],
+    on=['game_id', 'play_id'],
+    how='left'
+)
+
+# Add categories
+from models.momentum import get_momentum_category
+fourth_downs_momentum['momentum_category'] = fourth_downs_momentum['momentum_score'].apply(
+    get_momentum_category
+)
+
+# Analyze: Do high-momentum offenses go for it more?
+decision_by_momentum = pd.crosstab(
+    fourth_downs_momentum['momentum_category'],
+    fourth_downs_momentum['decision'],
+    normalize='index'
+)
+print(decision_by_momentum)
+```
+
+#### Conversion Success by Momentum
+
+```python
+# Filter to "went for it" decisions
+went_for_it = fourth_downs_momentum[
+    fourth_downs_momentum['decision'] == 'went_for_it'
+]
+
+# Conversion rate by momentum category
+conversion_by_momentum = went_for_it.groupby('momentum_category')['converted'].agg([
+    ('attempts', 'count'),
+    ('conversions', 'sum'),
+    ('rate', 'mean')
+])
+print(conversion_by_momentum)
+```
+
+#### Hot vs Cold Offenses
+
+```python
+# Compare hot vs cold offenses
+hot_offenses = plays_with_momentum[plays_with_momentum['momentum_score'] >= 76]
+cold_offenses = plays_with_momentum[plays_with_momentum['momentum_score'] <= 25]
+
+print(f"Hot offenses: {len(hot_offenses):,} plays")
+print(f"  Avg yards/play: {hot_offenses['yards_gained'].mean():.2f}")
+print(f"  First down rate: {hot_offenses['first_down'].mean():.1%}")
+
+print(f"\nCold offenses: {len(cold_offenses):,} plays")
+print(f"  Avg yards/play: {cold_offenses['yards_gained'].mean():.2f}")
+print(f"  First down rate: {cold_offenses['first_down'].mean():.1%}")
+```
+
+### Running Tests
+
+```bash
+cd nfl-analytics
+python test_momentum.py
+```
+
+This will test:
+- Individual momentum components
+- Single game calculations
+- Momentum categories
+- Relationship to outcomes
+- Multiple games analysis
+- Extreme scenarios
+- 4th down specific analysis
+
+### Integration with Game Context
+
+Momentum scoring requires game context features:
+
+```python
+from ingestion.play_by_play import load_pbp_data
+from models.game_context import add_game_context
+from models.momentum import add_momentum_scores
+
+# Complete pipeline
+pbp = load_pbp_data(seasons=[2023])
+pbp_context = add_game_context(pbp)
+pbp_momentum = add_momentum_scores(pbp_context)
+
+# Save for later use
+from ingestion.play_by_play import save_processed_data
+save_processed_data(pbp_momentum, 'plays_with_momentum_2023')
+```
+
+### Performance Notes
+
+- **Computation**: ~1-2 seconds per game
+- **Season averages**: Calculated once per dataset
+- **Memory**: Minimal overhead (~1 column added)
+- **Dependencies**: Requires game context columns
+
 ## Next Steps
 
-After loading the data and adding context, you can:
+After loading the data, adding context, and calculating momentum, you can:
 1. Merge with weather data (see `ingestion/weather_api.py`)
 2. Add injury information (see `ingestion/injury_feed.py`)
-3. Use context features in momentum models (see `models/momentum.py`)
-4. Build context-aware conversion probability models (see `models/conversion.py`)
-5. Backtest predictions with contextual features (see `backtesting/validator.py`)
+3. Build context-aware conversion probability models using momentum (see `models/conversion.py`)
+4. Backtest predictions with momentum features (see `backtesting/validator.py`)
+5. Compare coach decisions to model recommendations stratified by momentum
