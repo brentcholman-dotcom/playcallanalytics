@@ -40,7 +40,15 @@ from .fatigue import (
     add_fatigue_modifiers,
     analyze_fatigue_impact
 )
-from .conversion import calculate_conversion_probability, recommend_decision
+from .conversion import (
+    calculate_conversion_probability,
+    recommend_decision,
+    ConversionModel,
+    build_base_rate_table,
+    get_field_position_zone,
+    calculate_momentum_modifier,
+    combine_modifiers
+)
 from .game_context import (
     add_game_context,
     process_all_games_with_context,
@@ -83,6 +91,11 @@ __all__ = [
     'analyze_fatigue_impact',
     'calculate_conversion_probability',
     'recommend_decision',
+    'ConversionModel',
+    'build_base_rate_table',
+    'get_field_position_zone',
+    'calculate_momentum_modifier',
+    'combine_modifiers',
     'add_game_context',
     'process_all_games_with_context',
     'get_context_summary',
