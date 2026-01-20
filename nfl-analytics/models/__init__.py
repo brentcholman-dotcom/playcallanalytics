@@ -12,7 +12,16 @@ from .momentum import (
     analyze_momentum_distribution,
     calculate_season_averages
 )
-from .injuries import calculate_injury_impact
+from .injuries import (
+    calculate_injury_impact,
+    InjuredPlayer,
+    InjuryTracker,
+    PlayerTier,
+    calculate_defensive_injury_modifier,
+    calculate_offensive_injury_modifier,
+    calculate_net_injury_modifier,
+    calculate_injury_modifier_multiplier
+)
 from .weather import calculate_weather_impact
 from .crowd_noise import calculate_noise_impact
 from .fatigue import (
@@ -43,6 +52,13 @@ __all__ = [
     'analyze_momentum_distribution',
     'calculate_season_averages',
     'calculate_injury_impact',
+    'InjuredPlayer',
+    'InjuryTracker',
+    'PlayerTier',
+    'calculate_defensive_injury_modifier',
+    'calculate_offensive_injury_modifier',
+    'calculate_net_injury_modifier',
+    'calculate_injury_modifier_multiplier',
     'calculate_weather_impact',
     'calculate_noise_impact',
     'calculate_fatigue_level',
