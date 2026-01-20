@@ -23,7 +23,15 @@ from .injuries import (
     calculate_injury_modifier_multiplier
 )
 from .weather import calculate_weather_impact
-from .crowd_noise import calculate_noise_impact
+from .crowd_noise import (
+    calculate_noise_impact,
+    calculate_crowd_modifier,
+    calculate_crowd_modifier_from_play,
+    estimate_crowd_noise,
+    db_to_impact,
+    get_stadium_base_noise,
+    STADIUM_NOISE
+)
 from .fatigue import (
     calculate_fatigue_level,
     calculate_defensive_fatigue,
@@ -61,6 +69,12 @@ __all__ = [
     'calculate_injury_modifier_multiplier',
     'calculate_weather_impact',
     'calculate_noise_impact',
+    'calculate_crowd_modifier',
+    'calculate_crowd_modifier_from_play',
+    'estimate_crowd_noise',
+    'db_to_impact',
+    'get_stadium_base_noise',
+    'STADIUM_NOISE',
     'calculate_fatigue_level',
     'calculate_defensive_fatigue',
     'calculate_offensive_fatigue',
